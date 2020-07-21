@@ -1,7 +1,7 @@
 """ Implementation of the 'original' volume/area scaling glacier model from
 Marzeion et. al. 2012, see http://www.the-cryosphere.net/6/1295/2012/.
 While the mass balance model is comparable to OGGMs past mass balance model,
-the 'dynamic' part does not include any ice physics but works with ares/volume
+the 'dynamic' part does not include any ice physics but works with area/volume
 and length/volume scaling instead.
 
 Author: Moritz Oberrauch
@@ -149,6 +149,34 @@ def get_min_max_elevation(gdir):
     max_elev = np.max(topo[np.where(mask == 1)])
 
     return min_elev, max_elev
+
+
+def get_scaling_constants(gdir):
+    """ The scaling constants (c_l and c_a for volume/length and volume/area
+    scaling respectively) are random variables and vary from glacier to
+    glacier. This function computes these constants for the given glacier,
+    based on the RGI area, the inversion volume and the flowline length.
+
+    Parameters
+    ----------
+    gdir : :py:class:`oggm.GlacierDirectory`
+
+    Returns
+    -------
+    [float, float]
+        volume/length and volume/area scaling constants
+
+    """
+    # get glacier geometries
+    glacier_stats = utils.glacier_statistics(gdir)
+    length = glacier_stats['longuest_centerline_km'] * 1e3
+    area = glacier_stats['rgi_area_km2'] * 1e6
+    volume = glacier_stats['inv_volume_km3'] * 1e9
+    # compute scaling constants
+    c_l = volume / length ** cfg.PARAMS['vas_q_length']
+    c_a = volume / area ** cfg.PARAMS['vas_gamma_area']
+
+    return c_l, c_a
 
 
 def get_yearly_mb_temp_prcp(gdir, time_range=None, year_range=None):
