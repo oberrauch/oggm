@@ -151,11 +151,15 @@ def get_min_max_elevation(gdir):
     return min_elev, max_elev
 
 
-def get_scaling_constants(gdir):
+def get_scaling_constants(gdir, c_l=None, c_a=None):
     """ The scaling constants (c_l and c_a for volume/length and volume/area
     scaling respectively) are random variables and vary from glacier to
     glacier. This function computes these constants for the given glacier,
     based on the RGI area, the inversion volume and the flowline length.
+
+    The scaling constants are not independent of eachother. Hence, it is
+    possible to supply one scaling constant to compute the other one in a
+    congruent manner.
 
     Parameters
     ----------
@@ -173,8 +177,13 @@ def get_scaling_constants(gdir):
     area = glacier_stats['rgi_area_km2'] * 1e6
     volume = glacier_stats['inv_volume_km3'] * 1e9
     # compute scaling constants
-    c_l = volume / length ** cfg.PARAMS['vas_q_length']
-    c_a = volume / area ** cfg.PARAMS['vas_gamma_area']
+    if not c_l and not c_a:
+        c_l = volume / length ** cfg.PARAMS['vas_q_length']
+        c_a = volume / area ** cfg.PARAMS['vas_gamma_area']
+    elif c_l and not c_a:
+        pass
+    else:
+        pass
 
     return c_l, c_a
 
@@ -1259,7 +1268,7 @@ def run_random_climate(gdir, nyears=1000, y0=None, halfsize=15,
                        bias=None, seed=None, temperature_bias=None,
                        climate_filename='climate_monthly',
                        climate_input_filesuffix='', output_filesuffix='',
-                       init_area_m2=None, unique_samples=False):
+                       init_area_m2=None, unique_samples=False, **kwargs):
     """Runs the random mass balance model for a given number of years.
 
     This initializes a :py:class:`oggm.core.vascaling.RandomVASMassBalance`,
@@ -1335,7 +1344,7 @@ def run_random_climate(gdir, nyears=1000, y0=None, halfsize=15,
                                   filesuffix=output_filesuffix,
                                   delete=True)
     # run model
-    model.run_until_and_store(year_end=nyears, diag_path=diag_path)
+    model.run_until_and_store(year_end=nyears, diag_path=diag_path, **kwargs)
 
     return model
 
@@ -1347,9 +1356,8 @@ class ConstantVASMassBalance(MassBalanceModel):
 
     """
 
-    def __init__(self, gdir, mu_star=None, bias=None,
-                 y0=None, halfsize=15, filename='climate_monthly',
-                 input_filesuffix=''):
+    def __init__(self, gdir, mu_star=None, bias=None, y0=None, halfsize=15,
+                 filename='climate_monthly', input_filesuffix=''):
         """Initialize.
 
         Parameters
@@ -1560,7 +1568,7 @@ def run_constant_climate(gdir, nyears=1000, y0=None, halfsize=15,
                          bias=None, temperature_bias=None,
                          climate_filename='climate_monthly',
                          climate_input_filesuffix='', output_filesuffix='',
-                         init_area_m2=None):
+                         init_area_m2=None, **kwargs):
     """
     Runs the constant mass balance model for a given number of years.
 
@@ -1624,7 +1632,7 @@ def run_constant_climate(gdir, nyears=1000, y0=None, halfsize=15,
                                   filesuffix=output_filesuffix,
                                   delete=True)
     # run model
-    model.run_until_and_store(year_end=nyears, diag_path=diag_path)
+    model.run_until_and_store(year_end=nyears, diag_path=diag_path, **kwargs)
 
     return model
 
@@ -1725,8 +1733,11 @@ class VAScalingModel(object):
         """Compute the time scales for glacier length `tau_l`
         and glacier surface area `tau_a` for current time step."""
         self.tau_l = self.volume_m3 / (self.mb_model.prcp_clim * self.area_m2)
-        self.tau_l *= factor
+        self.tau_l *= factor  # scale with given factor
+        self.tau_l = max(self.tau_l, 1)
         self.tau_a = self.tau_l * self.area_m2 / self.length_m ** 2
+        # relaxation time scale cannot be less than one year
+        self.tau_l = max(self.tau_a, 1)
 
     def reset(self):
         """Set model attributes back to starting values."""
